@@ -38,3 +38,12 @@ Raspberry Pi: Runs the MQTT broker, subscribes to MQTT topics to receive status 
 | **Four claps detected**                            | Pattern recognized as “quadruple clap.”                  | ESP32 sends `BRIGHTNESS_DOWN` message via MQTT → LED brightness **decreases**. |
 | **No sound detected**                              | Idle state.                                              | LED maintains previous state (no change).                                      |
 | **Command sent from Raspberry Pi**                 | Publishes override message.                              | ESP32 receives MQTT message and updates LED                                    |
+
+## Requested changes
+
+- The ESP32 will detect the claps and transmit the detected clap pattern to the Raspberry Pi, instead of transmitting the LED control message.
+- The Raspberry Pi will receive the detected clap pattern from the ESP32 and transmit the control message to MQTT.
+- The clap patterns will include an average period, or time between claps, that will allow more variation, for example, this would allow you to turn te light off with one clap and on with 2, where the light brightness would be a function of the clap period: the light is brightest if the claps are fastest and dimmest if slowest. You get to set the limits on the period, e.g., between 0.1 and 1 seconds.
+- Your ESP32 will analyse the claps and their period.
+
+Discussion to be continued...
