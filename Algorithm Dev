@@ -1,7 +1,7 @@
 Raspberry Pi: 
 
 BEGIN
-  Connect to MQTT broker at IP 192.168.0.10
+  Connect to MQTT broker at IP 0.0.0.0 
   Subscribe to topic "thanos/clap_data"
 
   WHEN a message is received:
@@ -9,20 +9,20 @@ BEGIN
       Extract pattern and average_period
 
       IF pattern = 1 THEN
-          command ← "LED_OFF"
-          brightness ← 0
+          command to "LED_OFF"
+          brightness = 0
       ELSE IF pattern = 2 THEN
-          command ← "LED_ON"
-          brightness ← 80
+          command to "LED_ON"
+          brightness to 80
       ELSE IF pattern = 3 THEN
-          command ← "BRIGHTNESS_UP"
-          brightness ← MAX(40, 100 − (average_period × 60))
+          command to "BRIGHTNESS_UP"
+          brightness to MAX(40, 100 − (average_period × 60))
       ELSE IF pattern = 4 THEN
-          command ← "BRIGHTNESS_DOWN"
-          brightness ← MIN(80, (average_period × 80))
+          command to "BRIGHTNESS_DOWN"
+          brightness to MIN(80, (average_period × 80))
       ELSE
-          command ← "NO_ACTION"
-          brightness ← 0
+          command for "NO_ACTION"
+          brightness to 0
       END IF
 
       Create a control message with command and brightness
