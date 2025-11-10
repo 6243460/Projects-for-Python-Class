@@ -1,0 +1,34 @@
+Raspberry Pi: 
+
+BEGIN
+  Connect to MQTT broker at IP 192.168.0.10
+  Subscribe to topic "thanos/clap_data"
+
+  WHEN a message is received:
+      Decode JSON message
+      Extract pattern and average_period
+
+      IF pattern = 1 THEN
+          command ← "LED_OFF"
+          brightness ← 0
+      ELSE IF pattern = 2 THEN
+          command ← "LED_ON"
+          brightness ← 80
+      ELSE IF pattern = 3 THEN
+          command ← "BRIGHTNESS_UP"
+          brightness ← MAX(40, 100 − (average_period × 60))
+      ELSE IF pattern = 4 THEN
+          command ← "BRIGHTNESS_DOWN"
+          brightness ← MIN(80, (average_period × 80))
+      ELSE
+          command ← "NO_ACTION"
+          brightness ← 0
+      END IF
+
+      Create a control message with command and brightness
+      Publish control message to topic "thanos/led_control"
+      Display message sent on screen
+  END WHEN
+END
+
+In this outline of the Pseudocode, the raspberry pi will receive the data from the claps from the ESP32 and sends a LED control command based on the "patterns"
