@@ -10,7 +10,7 @@ Control an LED (on/off and brightness) using clap/snap patterns. The ESP32 proce
 
 ## Components
 - Raspberry Pi 
-- ESP32 WeMos Lolin D32 
+- ESP32 Freenove WROOM board 
 - KY-037 Sound Sensor
 - LED
 - Resistor 220Ω
