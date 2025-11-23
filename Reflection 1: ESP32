@@ -1,1 +1,150 @@
+I started coding the ESP32 for our project
+NOTES: There are still some changes to be made since im not sure about the raspberry pi's address and for some of the pins
+
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+
+// SETTINGS
+const char* WIFI_SSID = "iot_wireless";
+const char* WIFI_PASSWORD = "passphrase";
+
+const char* MQTT_SERVER = "192.168.0.10";   // your Pi's IP
+const int   MQTT_PORT = 1883;
+const char* MQTT_TOPIC = "thanos/clap_data";
+
+// CLAP SENSOR SETTINGS
+const int MIC_PIN = 34;           
+const int CLAP_THRESHOLD = 1600;  
+const int CLAP_TIMEOUT = 600;     
+const int MIN_GAP = 120;          
+
+// Variables
+unsigned long clapTimes[5];
+int clapCount = 0;
+unsigned long lastClapTime = 0;
+
+// WiFi + MQTT
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// CONNECT TO WIFI
+void connectWiFi() {
+  Serial.print("Connecting to WiFi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(300);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected.");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+// CONNECT TO MQTT
+void connectMQTT() {
+  while (!client.connected()) {
+    Serial.println("Connecting to MQTT...");
+
+    // unique ID
+    String clientId = "ESP32_Thanos_";
+    clientId += String(random(0xffff), HEX);
+
+    if (client.connect(clientId.c_str())) {
+      Serial.println("MQTT connected.");
+    } else {
+      Serial.print("Failed. rc=");
+      Serial.println(client.state());
+      delay(1000);
+    }
+  }
+}
+
+
+// DETECT CLAP 
+bool detectClap() {
+  int micValue = analogRead(MIC_PIN);
+
+  if (micValue > CLAP_THRESHOLD) {
+    unsigned long now = millis();
+    if (now - lastClapTime > MIN_GAP) {
+      lastClapTime = now;
+      return true;
+    }
+  }
+  return false;
+}
+
+// SEND JSON TO MQTT
+void publishPattern(int pattern, float avgSeconds) {
+  char message[120];
+  sprintf(message,
+          "{\"pattern\":%d,\"average_period\":%.2f}",
+          pattern,
+          avgSeconds);
+
+  client.publish(MQTT_TOPIC, message);
+
+  Serial.print("Sent → ");
+  Serial.println(message);
+}
+
+// SETUP
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  connectWiFi();
+  client.setServer(MQTT_SERVER, MQTT_PORT);
+
+  pinMode(MIC_PIN, INPUT);
+}
+
+// LOOP
+void loop() {
+  if (!client.connected()) {
+    connectMQTT();
+  }
+  client.loop();
+
+  // WAIT FOR FIRST CLAP 
+  if (detectClap()) {
+    clapTimes[0] = millis();
+    clapCount = 1;
+    Serial.println("Clap #1 detected!");
+
+    // DETECT MORE CLAPS
+    while (true) {
+      if (detectClap()) {
+        clapTimes[clapCount] = millis();
+        clapCount++;
+        Serial.printf("Clap #%d detected!\n", clapCount);
+      }
+
+      if (millis() - clapTimes[clapCount - 1] > CLAP_TIMEOUT ||
+          clapCount == 4) {
+        break;
+      }
+    }
+
+    // PROCESS RESULTS 
+    if (clapCount == 1) {
+      publishPattern(1, 0.0);
+    } else {
+      unsigned long total = 0;
+      for (int i = 1; i < clapCount; i++) {
+        total += (clapTimes[i] - clapTimes[i - 1]);
+      }
+
+      float avgMs = (float)total / (clapCount - 1);
+      float avgSec = avgMs / 1000.0;
+
+      publishPattern(clapCount, avgSec);
+    }
+
+    clapCount = 0;
+    delay(500);
+  }
+}
 
