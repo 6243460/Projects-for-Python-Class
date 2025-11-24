@@ -9,7 +9,7 @@ NOTES: There are still some changes to be made since im not sure about the raspb
 const char* WIFI_SSID = "iot_wireless";
 const char* WIFI_PASSWORD = "passphrase";
 
-const char* MQTT_SERVER = "192.168.0.10";   // your Pi's IP
+const char* MQTT_SERVER = "192.168.0.10";   
 const int   MQTT_PORT = 1883;
 const char* MQTT_TOPIC = "thanos/clap_data";
 
