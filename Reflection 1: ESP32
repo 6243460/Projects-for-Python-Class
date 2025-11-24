@@ -148,3 +148,39 @@ void loop() {
   }
 }
 
+
+
+CODE WITHOUT RASPBERRY PI:
+
+
+const int MIC_PIN = 34;     
+const int LED_PIN = 33;    
+const int MAX = 40;   
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(MIC_PIN, INPUT);
+
+  ledcAttachPin(LED_PIN, 0);    
+  ledcSetup(0, 5000, 8);        
+}
+
+void loop() {
+
+  int micValue = analogRead(MIC_PIN);
+
+  Serial.print("Mic: ");
+  Serial.println(micValue);
+
+  int brightness = map(
+    micValue,        
+    0, MAX,    
+    0, 255           
+  );
+
+  brightness = constrain(brightness, 0, 255);
+
+  ledcWrite(0, brightness);
+
+  delay(20);
+}
