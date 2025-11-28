@@ -1,186 +1,274 @@
 I started coding the ESP32 for our project
-NOTES: There are still some changes to be made since im not sure about the raspberry pi's address and for some of the pins
+NOTES: There are still some changes to be made. If u scroll lower, you will see the second set of code 1 clap = off, 1 clap 2nd time = on
 
-#include <WiFi.h>
-#include <PubSubClient.h>
+//CODE 1 WITH 1 CLAP = OFF, 2 CLAPS = ON, 3 CLAPS = BRIGHTNESS ADJUST (TO BE FIXED)
+const int MIC_PIN = 34;
+const int LED_PIN = 33;     
+const int SMOOTH_SAMPLES = 15;
+int noiseFloor = 0;
+int CLAP_THRESHOLD = 20;    
 
+//Timing 
+const unsigned long MIN_GAP = 70;    // min ms 
+const unsigned long COOLDOWN = 100;  
+const unsigned long SEQ_TIMEOUT = 700; // time to wait after last clap to finalize sequence
 
-// SETTINGS
-const char* WIFI_SSID = "iot_wireless";
-const char* WIFI_PASSWORD = "passphrase";
-
-const char* MQTT_SERVER = "192.168.0.10";   
-const int   MQTT_PORT = 1883;
-const char* MQTT_TOPIC = "thanos/clap_data";
-
-// CLAP SENSOR SETTINGS
-const int MIC_PIN = 34;           
-const int CLAP_THRESHOLD = 1600;  
-const int CLAP_TIMEOUT = 600;     
-const int MIN_GAP = 120;          
-
-// Variables
-unsigned long clapTimes[5];
+//Clap storage
+unsigned long clapTimes[4];
 int clapCount = 0;
-unsigned long lastClapTime = 0;
+unsigned long lastPeakTime = 0;     // last detected peak time
+bool inCooldown = false;
 
-// WiFi + MQTT
-WiFiClient espClient;
-PubSubClient client(espClient);
+//sensor values
+unsigned long lastPrint = 0;
+const unsigned long PRINT_INTERVAL = 60; // ms
 
-// CONNECT TO WIFI
-void connectWiFi() {
-  Serial.print("Connecting to WiFi...");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+//PWM
+const int PWM_CH = 0;
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
-    Serial.print(".");
+int smoothRead(int pin) {
+  long s = 0;
+  for (int i = 0; i < SMOOTH_SAMPLES; ++i) {
+    s += analogRead(pin);
   }
-  Serial.println("\nWiFi connected.");
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.localIP());
+  return s / SMOOTH_SAMPLES;
 }
 
-// CONNECT TO MQTT
-void connectMQTT() {
-  while (!client.connected()) {
-    Serial.println("Connecting to MQTT...");
-
-    // unique ID
-    String clientId = "ESP32_Thanos_";
-    clientId += String(random(0xffff), HEX);
-
-    if (client.connect(clientId.c_str())) {
-      Serial.println("MQTT connected.");
-    } else {
-      Serial.print("Failed. rc=");
-      Serial.println(client.state());
-      delay(1000);
-    }
+int calibrateNoise(int pin, int samples = 200, int delayMs = 3) {
+  long s = 0;
+  for (int i = 0; i < samples; ++i) {
+    s += smoothRead(pin);
+    delay(delayMs);
   }
+  return (int)(s / samples);
 }
 
-
-// DETECT CLAP 
-bool detectClap() {
-  int micValue = analogRead(MIC_PIN);
-
-  if (micValue > CLAP_THRESHOLD) {
-    unsigned long now = millis();
-    if (now - lastClapTime > MIN_GAP) {
-      lastClapTime = now;
-      return true;
-    }
-  }
-  return false;
+bool isPeak(int value) {
+  return value >= CLAP_THRESHOLD;
 }
 
-// SEND JSON TO MQTT
-void publishPattern(int pattern, float avgSeconds) {
-  char message[120];
-  sprintf(message,
-          "{\"pattern\":%d,\"average_period\":%.2f}",
-          pattern,
-          avgSeconds);
-
-  client.publish(MQTT_TOPIC, message);
-
-  Serial.print("Sent → ");
-  Serial.println(message);
+void setupLED() {
+  ledcSetup(PWM_CH, 5000, 8);
+  ledcAttachPin(LED_PIN, PWM_CH);
+  ledcWrite(PWM_CH, 0);
 }
 
-// SETUP
-void setup() {
-  Serial.begin(115200);
-  delay(1000);
-
-  connectWiFi();
-  client.setServer(MQTT_SERVER, MQTT_PORT);
-
-  pinMode(MIC_PIN, INPUT);
+void setLEDBrightness(int b) {
+  b = constrain(b, 0, 255);
+  ledcWrite(PWM_CH, b);
 }
-
-// LOOP
-void loop() {
-  if (!client.connected()) {
-    connectMQTT();
-  }
-  client.loop();
-
-  // WAIT FOR FIRST CLAP 
-  if (detectClap()) {
-    clapTimes[0] = millis();
-    clapCount = 1;
-    Serial.println("Clap #1 detected!");
-
-    // DETECT MORE CLAPS
-    while (true) {
-      if (detectClap()) {
-        clapTimes[clapCount] = millis();
-        clapCount++;
-        Serial.printf("Clap #%d detected!\n", clapCount);
-      }
-
-      if (millis() - clapTimes[clapCount - 1] > CLAP_TIMEOUT ||
-          clapCount == 4) {
-        break;
-      }
-    }
-
-    // PROCESS RESULTS 
-    if (clapCount == 1) {
-      publishPattern(1, 0.0);
-    } else {
-      unsigned long total = 0;
-      for (int i = 1; i < clapCount; i++) {
-        total += (clapTimes[i] - clapTimes[i - 1]);
-      }
-
-      float avgMs = (float)total / (clapCount - 1);
-      float avgSec = avgMs / 1000.0;
-
-      publishPattern(clapCount, avgSec);
-    }
-
-    clapCount = 0;
-    delay(500);
-  }
-}
-
-
-
-CODE WITHOUT RASPBERRY PI:
-
-
-const int MIC_PIN = 34;     
-const int LED_PIN = 33;    
-const int MAX = 40;   
 
 void setup() {
   Serial.begin(115200);
-  pinMode(MIC_PIN, INPUT);
+  delay(300);
 
-  ledcAttachPin(LED_PIN, 0);    
-  ledcSetup(0, 5000, 8);        
+  Serial.println("\n=== Project Thanos (robust clap detector) ===");
+  Serial.println("Calibrating");
+
+  pinMode(MIC_PIN, INPUT);
+  noiseFloor = calibrateNoise(MIC_PIN);
+
+  CLAP_THRESHOLD = max(noiseFloor + 28, 35);
+
+  Serial.print("Noise floor: "); 
+  Serial.println(noiseFloor);
+  Serial.print("CLAP_THRESHOLD set to: "); 
+  Serial.println(CLAP_THRESHOLD);
+  Serial.println("Now ready. Try clapping (1/2/3 claps).");
+
+  setupLED();
+}
+
+void finalizeSequence() {
+  Serial.print("\n=== Final pattern: "); 
+  Serial.print(clapCount); 
+  Serial.println(" ===");
+
+  if (clapCount == 1) {
+    Serial.println("-> Action: LED OFF");
+    setLEDBrightness(0);
+  } else if (clapCount == 2) {
+    Serial.println("-> Action: LED FULL ON");
+    setLEDBrightness(255);
+  } else if (clapCount == 3) {
+    //average period in ms
+    unsigned long total = 0;
+    for (int i = 1; i < clapCount; ++i) total += (clapTimes[i] - clapTimes[i-1]);
+    float avg = (float)total / (float)(clapCount - 1); // ms
+    Serial.print("Average period (ms): "); Serial.println(avg);
+
+    // Map avg (fast -> bright, slow -> dim). Tweak mapping bounds if needed.
+    // If avg is 100ms -> 255; if avg is 600ms -> 40
+    int brightness = map((int)avg, 100, 600, 255, 40);
+    brightness = constrain(brightness, 40, 255);
+    Serial.print("-> Action: LED brightness = "); Serial.println(brightness);
+    setLEDBrightness(brightness);
+  } else {
+    Serial.println("-> Pattern ignored (0 or >3 claps)");
+  }
+
+  // reset
+  clapCount = 0;
 }
 
 void loop() {
+  unsigned long now = millis();
 
-  int micValue = analogRead(MIC_PIN);
+  if (now - lastPrint >= PRINT_INTERVAL) {
+    int val = smoothRead(MIC_PIN);
+    Serial.print("Mic: "); Serial.println(val);
+    lastPrint = now;
+  }
 
-  Serial.print("Mic: ");
-  Serial.println(micValue);
+  int micVal = smoothRead(MIC_PIN);
 
-  int brightness = map(
-    micValue,        
-    0, MAX,    
-    0, 255           
-  );
+  //Allow new detection only after signal drops sufficiently
+  if (inCooldown) {
+    if (micVal < CLAP_THRESHOLD * 0.6) {
+      inCooldown = false; // ready for next real clap
+    }
+  }
 
-  brightness = constrain(brightness, 0, 255);
+  //detect peak
+  if (!inCooldown && isPeak(micVal) && (now - lastPeakTime) > MIN_GAP) {
+    if (clapCount < 4) {
+      clapTimes[clapCount] = now;
+      clapCount++;
+      Serial.print("Detected clap #"); Serial.println(clapCount);
+    } else {
+      Serial.println("Detected clap but sequence full (ignored extra)");
+    }
 
-  ledcWrite(0, brightness);
+    lastPeakTime = now;
+    inCooldown = true;
+  }
 
-  delay(20);
+  if (clapCount > 0 && (now - lastPeakTime) > SEQ_TIMEOUT) {
+    finalizeSequence();
+  }
+
+  delay(10);
 }
+
+
+SECOND SET OF CODE 1 CLAP = ON, 1 CLAP SECOND TIME = OFF:
+
+const int MIC_PIN = 34;
+const int LED_PIN = 33;     
+const int SMOOTH_SAMPLES = 15;
+int noiseFloor = 0;
+int CLAP_THRESHOLD = 20;
+
+//Timing 
+const unsigned long MIN_GAP = 70;   
+const unsigned long COOLDOWN = 100;  
+const unsigned long SEQ_TIMEOUT = 500; 
+
+//Clap detection
+unsigned long lastPeakTime = 0;
+bool inCooldown = false;
+
+//sensor values
+unsigned long lastPrint = 0;
+const unsigned long PRINT_INTERVAL = 60;
+
+//PWM
+const int PWM_CH = 0;
+
+// LED state toggle
+bool ledState = false;
+
+int smoothRead(int pin) {
+  long s = 0;
+  for (int i = 0; i < SMOOTH_SAMPLES; ++i) {
+    s += analogRead(pin);
+  }
+  return s / SMOOTH_SAMPLES;
+}
+
+int calibrateNoise(int pin, int samples = 200, int delayMs = 3) {
+  long s = 0;
+  for (int i = 0; i < samples; ++i) {
+    s += smoothRead(pin);
+    delay(delayMs);
+  }
+  return (int)(s / samples);
+}
+
+bool isPeak(int value) {
+  return value >= CLAP_THRESHOLD;
+}
+
+void setupLED() {
+  ledcSetup(PWM_CH, 5000, 8);
+  ledcAttachPin(LED_PIN, PWM_CH);
+  ledcWrite(PWM_CH, 0);
+}
+
+void setLEDBrightness(int b) {
+  b = constrain(b, 0, 255);
+  ledcWrite(PWM_CH, b);
+}
+
+void toggleLED() {
+  ledState = !ledState;
+
+  if (ledState) {
+    Serial.println("-> LED ON (toggle)");
+    setLEDBrightness(255);
+  } else {
+    Serial.println("-> LED OFF (toggle)");
+    setLEDBrightness(0);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+
+  Serial.println("\n=== Project Thanos (clap toggle version) ===");
+  Serial.println("Calibrating...");
+
+  pinMode(MIC_PIN, INPUT);
+  noiseFloor = calibrateNoise(MIC_PIN);
+
+  CLAP_THRESHOLD = max(noiseFloor + 28, 35);
+
+  Serial.print("Noise floor: ");
+  Serial.println(noiseFloor);
+  Serial.print("CLAP_THRESHOLD: ");
+  Serial.println(CLAP_THRESHOLD);
+
+  setupLED();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  //mic values
+  if (now - lastPrint >= PRINT_INTERVAL) {
+    int val = smoothRead(MIC_PIN);
+    Serial.print("Mic: "); Serial.println(val);
+    lastPrint = now;
+  }
+
+  int micVal = smoothRead(MIC_PIN);
+
+  if (inCooldown) {
+    if (micVal < CLAP_THRESHOLD * 0.6) {
+      inCooldown = false;
+    }
+  }
+
+  // detect single clap
+  if (!inCooldown && isPeak(micVal) && (now - lastPeakTime) > MIN_GAP) {
+    Serial.println("Detected 1 clap → toggling LED");
+    toggleLED();
+
+    lastPeakTime = now;
+    inCooldown = true;
+  }
+
+  delay(10);
+}
+
