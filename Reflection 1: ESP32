@@ -1,168 +1,22 @@
 I started coding the ESP32 for our project
-NOTES: There are still some changes to be made. If u scroll lower, you will see the second set of code 1 clap = off, 1 clap 2nd time = on
+NOTES: There are still some changes to be made.
+1 CLAP FIRST TIME= LED ON
+1 CLAP SECOND TIME = LED OFF
+2 CLAPS = BRIGHTNESS AT 120
+3 CLAPS BRIGHTNESS AT 40
 
-//CODE 1 WITH 1 CLAP = OFF, 2 CLAPS = ON, 3 CLAPS = BRIGHTNESS ADJUST (TO BE FIXED)
-const int MIC_PIN = 34;
-const int LED_PIN = 33;     
-const int SMOOTH_SAMPLES = 15;
-int noiseFloor = 0;
-int CLAP_THRESHOLD = 20;    
-
-//Timing 
-const unsigned long MIN_GAP = 70;    // min ms 
-const unsigned long COOLDOWN = 100;  
-const unsigned long SEQ_TIMEOUT = 700; // time to wait after last clap to finalize sequence
-
-//Clap storage
-unsigned long clapTimes[4];
-int clapCount = 0;
-unsigned long lastPeakTime = 0;     // last detected peak time
-bool inCooldown = false;
-
-//sensor values
-unsigned long lastPrint = 0;
-const unsigned long PRINT_INTERVAL = 60; // ms
-
-//PWM
-const int PWM_CH = 0;
-
-int smoothRead(int pin) {
-  long s = 0;
-  for (int i = 0; i < SMOOTH_SAMPLES; ++i) {
-    s += analogRead(pin);
-  }
-  return s / SMOOTH_SAMPLES;
-}
-
-int calibrateNoise(int pin, int samples = 200, int delayMs = 3) {
-  long s = 0;
-  for (int i = 0; i < samples; ++i) {
-    s += smoothRead(pin);
-    delay(delayMs);
-  }
-  return (int)(s / samples);
-}
-
-bool isPeak(int value) {
-  return value >= CLAP_THRESHOLD;
-}
-
-void setupLED() {
-  ledcSetup(PWM_CH, 5000, 8);
-  ledcAttachPin(LED_PIN, PWM_CH);
-  ledcWrite(PWM_CH, 0);
-}
-
-void setLEDBrightness(int b) {
-  b = constrain(b, 0, 255);
-  ledcWrite(PWM_CH, b);
-}
-
-void setup() {
-  Serial.begin(115200);
-  delay(300);
-
-  Serial.println("\n=== Project Thanos (robust clap detector) ===");
-  Serial.println("Calibrating");
-
-  pinMode(MIC_PIN, INPUT);
-  noiseFloor = calibrateNoise(MIC_PIN);
-
-  CLAP_THRESHOLD = max(noiseFloor + 28, 35);
-
-  Serial.print("Noise floor: "); 
-  Serial.println(noiseFloor);
-  Serial.print("CLAP_THRESHOLD set to: "); 
-  Serial.println(CLAP_THRESHOLD);
-  Serial.println("Now ready. Try clapping (1/2/3 claps).");
-
-  setupLED();
-}
-
-void finalizeSequence() {
-  Serial.print("\n=== Final pattern: "); 
-  Serial.print(clapCount); 
-  Serial.println(" ===");
-
-  if (clapCount == 1) {
-    Serial.println("-> Action: LED OFF");
-    setLEDBrightness(0);
-  } else if (clapCount == 2) {
-    Serial.println("-> Action: LED FULL ON");
-    setLEDBrightness(255);
-  } else if (clapCount == 3) {
-    //average period in ms
-    unsigned long total = 0;
-    for (int i = 1; i < clapCount; ++i) total += (clapTimes[i] - clapTimes[i-1]);
-    float avg = (float)total / (float)(clapCount - 1); // ms
-    Serial.print("Average period (ms): "); Serial.println(avg);
-
-    // Map avg (fast -> bright, slow -> dim). Tweak mapping bounds if needed.
-    // If avg is 100ms -> 255; if avg is 600ms -> 40
-    int brightness = map((int)avg, 100, 600, 255, 40);
-    brightness = constrain(brightness, 40, 255);
-    Serial.print("-> Action: LED brightness = "); Serial.println(brightness);
-    setLEDBrightness(brightness);
-  } else {
-    Serial.println("-> Pattern ignored (0 or >3 claps)");
-  }
-
-  // reset
-  clapCount = 0;
-}
-
-void loop() {
-  unsigned long now = millis();
-
-  if (now - lastPrint >= PRINT_INTERVAL) {
-    int val = smoothRead(MIC_PIN);
-    Serial.print("Mic: "); Serial.println(val);
-    lastPrint = now;
-  }
-
-  int micVal = smoothRead(MIC_PIN);
-
-  //Allow new detection only after signal drops sufficiently
-  if (inCooldown) {
-    if (micVal < CLAP_THRESHOLD * 0.6) {
-      inCooldown = false; // ready for next real clap
-    }
-  }
-
-  //detect peak
-  if (!inCooldown && isPeak(micVal) && (now - lastPeakTime) > MIN_GAP) {
-    if (clapCount < 4) {
-      clapTimes[clapCount] = now;
-      clapCount++;
-      Serial.print("Detected clap #"); Serial.println(clapCount);
-    } else {
-      Serial.println("Detected clap but sequence full (ignored extra)");
-    }
-
-    lastPeakTime = now;
-    inCooldown = true;
-  }
-
-  if (clapCount > 0 && (now - lastPeakTime) > SEQ_TIMEOUT) {
-    finalizeSequence();
-  }
-
-  delay(10);
-}
-
-
-SECOND SET OF CODE 1 CLAP = ON, 1 CLAP SECOND TIME = OFF:
+CODE:
 
 const int MIC_PIN = 34;
 const int LED_PIN = 33;     
 const int SMOOTH_SAMPLES = 15;
 int noiseFloor = 0;
-int CLAP_THRESHOLD = 20;
+int CLAP_THRESHOLD = 150;
 
 //Timing 
 const unsigned long MIN_GAP = 70;   
 const unsigned long COOLDOWN = 100;  
-const unsigned long SEQ_TIMEOUT = 500; 
+const unsigned long SEQ_TIMEOUT = 1000; 
 
 //Clap detection
 unsigned long lastPeakTime = 0;
@@ -175,8 +29,12 @@ const unsigned long PRINT_INTERVAL = 60;
 //PWM
 const int PWM_CH = 0;
 
-// LED state toggle
+// LED toggle state
 bool ledState = false;
+
+int clapCount = 0;
+unsigned long seqStart = 0;
+unsigned long lastClapTime = 0;
 
 int smoothRead(int pin) {
   long s = 0;
@@ -210,42 +68,18 @@ void setLEDBrightness(int b) {
   ledcWrite(PWM_CH, b);
 }
 
-void toggleLED() {
-  ledState = !ledState;
-
-  if (ledState) {
-    Serial.println("-> LED ON (toggle)");
-    setLEDBrightness(255);
-  } else {
-    Serial.println("-> LED OFF (toggle)");
-    setLEDBrightness(0);
-  }
-}
-
 void setup() {
   Serial.begin(115200);
   delay(300);
-
-  Serial.println("\n=== Project Thanos (clap toggle version) ===");
-  Serial.println("Calibrating...");
-
   pinMode(MIC_PIN, INPUT);
   noiseFloor = calibrateNoise(MIC_PIN);
-
-  CLAP_THRESHOLD = max(noiseFloor + 28, 35);
-
-  Serial.print("Noise floor: ");
-  Serial.println(noiseFloor);
-  Serial.print("CLAP_THRESHOLD: ");
-  Serial.println(CLAP_THRESHOLD);
-
   setupLED();
 }
 
 void loop() {
   unsigned long now = millis();
 
-  //mic values
+  //mic values 
   if (now - lastPrint >= PRINT_INTERVAL) {
     int val = smoothRead(MIC_PIN);
     Serial.print("Mic: "); Serial.println(val);
@@ -260,15 +94,63 @@ void loop() {
     }
   }
 
-  // detect single clap
   if (!inCooldown && isPeak(micVal) && (now - lastPeakTime) > MIN_GAP) {
-    Serial.println("Detected 1 clap → toggling LED");
-    toggleLED();
 
+    if (clapCount == 0) {
+      seqStart = now;
+    }
+
+    clapCount++;
+    lastClapTime = now;
     lastPeakTime = now;
     inCooldown = true;
+
+    Serial.print("Clap detected. Count = ");
+    Serial.println(clapCount);
   }
 
+  if (clapCount > 0 && (now - lastClapTime) > SEQ_TIMEOUT) {
+
+    int pattern = 0;
+
+    if (clapCount == 1) {
+      pattern = ledState ? 1 : 2;
+    }
+    else if (clapCount == 2) {
+      pattern = 3;
+    }
+    else if (clapCount == 3) {
+      pattern = 4;
+    }
+
+    Serial.print("Final pattern detected: ");
+    Serial.println(pattern);
+
+    // LED ACTIONS
+    if (pattern == 1) {
+      Serial.println("Pattern 1 = LED OFF");
+      setLEDBrightness(0);
+      ledState = false;
+    }
+    else if (pattern == 2) {
+      Serial.println("Pattern 2 = LED ON");
+      setLEDBrightness(255);
+      ledState = true;
+    }
+    else if (pattern == 3) {
+      Serial.println("Pattern 3 = BRIGHTNESS_SET (120)");
+      setLEDBrightness(120);
+      ledState = true;
+    }
+    else if (pattern == 4) {
+      Serial.println("Pattern 4 = BRIGHTNESS_SET (40)");
+      setLEDBrightness(40);
+      ledState = true;
+    }
+
+    // RESET 
+    clapCount = 0;
+  }
+  
   delay(10);
 }
-
