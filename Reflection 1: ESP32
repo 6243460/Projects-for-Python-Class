@@ -1,9 +1,9 @@
 I started coding the ESP32 for our project
 NOTES: There are still some changes to be made.
-1 CLAP FIRST TIME= LED ON
+1 CLAP FIRST TIME= LED ON at 128
 1 CLAP SECOND TIME = LED OFF
-2 CLAPS = BRIGHTNESS AT 120
-3 CLAPS BRIGHTNESS AT 40
+2 CLAPS = -50 BRIGHTNESS 
+3 CLAPS = +50 BRIGHTNESS
 
 CODE:
 
@@ -29,9 +29,12 @@ const unsigned long PRINT_INTERVAL = 60;
 //PWM
 const int PWM_CH = 0;
 
-// LED toggle state
+//Brightness control
+int ledBrightness = 128;       // default brightness
+const int step = 50;           // increment/decrement per pattern
 bool ledState = false;
 
+//Clap counting
 int clapCount = 0;
 unsigned long seqStart = 0;
 unsigned long lastClapTime = 0;
@@ -65,7 +68,8 @@ void setupLED() {
 
 void setLEDBrightness(int b) {
   b = constrain(b, 0, 255);
-  ledcWrite(PWM_CH, b);
+  ledBrightness = b; 
+  ledcWrite(PWM_CH, ledBrightness);
 }
 
 void setup() {
@@ -82,7 +86,8 @@ void loop() {
   //mic values 
   if (now - lastPrint >= PRINT_INTERVAL) {
     int val = smoothRead(MIC_PIN);
-    Serial.print("Mic: "); Serial.println(val);
+    Serial.print("Mic: "); 
+    Serial.println(val);
     lastPrint = now;
   }
 
@@ -109,44 +114,41 @@ void loop() {
     Serial.println(clapCount);
   }
 
+  // If timeout passed → evaluate pattern
   if (clapCount > 0 && (now - lastClapTime) > SEQ_TIMEOUT) {
 
-    int pattern = 0;
-
-    if (clapCount == 1) {
-      pattern = ledState ? 1 : 2;
-    }
-    else if (clapCount == 2) {
-      pattern = 3;
-    }
-    else if (clapCount == 3) {
-      pattern = 4;
-    }
-
     Serial.print("Final pattern detected: ");
-    Serial.println(pattern);
+    Serial.println(clapCount);
 
     // LED ACTIONS
-    if (pattern == 1) {
-      Serial.println("Pattern 1 = LED OFF");
+switch (clapCount) {
+
+  case 1:  // toggle on/off
+    if (ledBrightness > 0) {
+      Serial.println("1 Clap = LED OFF");
       setLEDBrightness(0);
       ledState = false;
+    } else { 
+      Serial.println("1 Clap = LED ON");
+      setLEDBrightness(128);
     }
-    else if (pattern == 2) {
-      Serial.println("Pattern 2 = LED ON");
-      setLEDBrightness(255);
-      ledState = true;
-    }
-    else if (pattern == 3) {
-      Serial.println("Pattern 3 = BRIGHTNESS_SET (120)");
-      setLEDBrightness(120);
-      ledState = true;
-    }
-    else if (pattern == 4) {
-      Serial.println("Pattern 4 = BRIGHTNESS_SET (40)");
-      setLEDBrightness(40);
-      ledState = true;
-    }
+    break;
+
+  case 2: // brightness -50
+    Serial.println("2 Claps = - brightness");
+    setLEDBrightness(ledBrightness - step);
+    break;
+
+  case 3:  // brightness +50
+    Serial.println("3 Claps = + brightness");
+    setLEDBrightness(ledBrightness + step);
+    break;
+
+  case 4:  // max brightness
+    Serial.println("4 Claps = MAX brightness");
+    setLEDBrightness(255);
+    break;
+}
 
     // RESET 
     clapCount = 0;
