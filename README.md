@@ -32,10 +32,10 @@ Raspberry Pi: Runs the MQTT broker, subscribes to MQTT topics to receive status 
 
 | **Condition / Input**                              | **Processing (by ESP32)**                                | **Result / Output**                                                            |
 | -------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **1 clap detected**                              | Pattern = 1, average period computed                     | Raspberry Pi sends: `LED_OFF`                     |
-| **2 claps detected**                             | Pattern = 2, period computed                    | Raspberry pi sends: `LED_ON`                     |
-| **3 claps detected**                           | Pattern = 3                      | Raspberry pi maps period → brightness and sends `BRIGHTNESS_SET`    |
-| **4 claps detected**                            | Pattern = 4                  | Raspberry pi maps period → brightness (lower or higher depending on mapping)    |
+| **1 clap detected first time**                              | Pattern = 1, average period computed                     | Raspberry Pi sends: `LED_OFF`                     |
+| **1 claps detected 2nd time**                             | Pattern = 2, period computed                    | Raspberry pi sends: `LED_ON`                     |
+| **2 claps detected**                           | Pattern = 3                      | Raspberry pi maps period → brightness and sends `BRIGHTNESS_SET`    |
+| **3 claps detected**                            | Pattern = 4                  | Raspberry pi maps period → brightness (lower or higher depending on mapping)    |
 | **No sound detected**                              | Idle state.                                              | LED maintains previous state (no change).                                      |
 | **Command sent from Raspberry Pi**                 | Publishes override message.                              | ESP32 receives MQTT message and updates LED                                    |
  
