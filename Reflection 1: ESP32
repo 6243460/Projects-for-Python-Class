@@ -1,11 +1,27 @@
-I started coding the ESP32 for our project
+/*I started coding the ESP32 for our project
 NOTES: There are still some changes to be made.
 1 CLAP FIRST TIME= LED ON at 128
 1 CLAP SECOND TIME = LED OFF
 2 CLAPS = -50 BRIGHTNESS 
 3 CLAPS = +50 BRIGHTNESS
 
-CODE:
+CODE:*/
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// WiFi settings 
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
+
+// MQTT settings 
+const char* mqtt_server = "IP";  
+
+// MQTT topics - ADD THESE DEFINITIONS
+const char* led_control_topic = "led/control";
+const char* clap_topic = "clap/pattern";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
 
 const int MIC_PIN = 34;
 const int LED_PIN = 33;     
@@ -39,6 +55,91 @@ int clapCount = 0;
 unsigned long seqStart = 0;
 unsigned long lastClapTime = 0;
 
+//Function Declaration
+void setupWiFi();
+void callback(char* topic, byte* payload, unsigned int length);
+void reconnect();
+void publishClapPattern(int pattern);
+int smoothRead(int pin);
+int calibrateNoise(int pin, int samples = 200, int delayMs = 3);
+bool isPeak(int value);
+void setupLED();
+void setLEDBrightness(int b);
+
+//MQTT Functions
+void setupWiFi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("MQTT Message: ");
+  Serial.print(topic);
+  Serial.print(" - ");
+  
+  String message;
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  Serial.println(message);
+
+  // Handle LED control from Python
+  if (String(topic) == led_control_topic) {
+    if (message == "ON") {
+      setLEDBrightness(128);
+      Serial.println("COMMAND: LED ON");
+    } else if (message == "OFF") {
+      setLEDBrightness(0);
+      Serial.println("COMMAND: LED OFF");
+    } else if (message.startsWith("BRIGHTNESS:")) {
+      int brightness = message.substring(11).toInt();
+      setLEDBrightness(brightness);
+      Serial.print("COMMAND: Brightness ");
+      Serial.println(brightness);
+    }
+  }
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP32Client-";
+    clientId += String(random(0xffff), HEX);
+    
+    if (client.connect(clientId.c_str())) {
+      Serial.println("CONNECTED to MQTT!");
+      client.subscribe(led_control_topic);
+      Serial.println("Subscribed to LED control");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" - retrying in 5 seconds");
+      delay(5000);
+    }
+  }
+}
+
+void publishClapPattern(int pattern) {
+  String message = "{\"pattern\":" + String(pattern) + "}";
+  client.publish(clap_topic, message.c_str());
+  Serial.print("Published pattern: ");
+  Serial.println(pattern);
+}
+
 int smoothRead(int pin) {
   long s = 0;
   for (int i = 0; i < SMOOTH_SAMPLES; ++i) {
@@ -47,7 +148,7 @@ int smoothRead(int pin) {
   return s / SMOOTH_SAMPLES;
 }
 
-int calibrateNoise(int pin, int samples = 200, int delayMs = 3) {
+int calibrateNoise(int pin, int samples, int delayMs) {
   long s = 0;
   for (int i = 0; i < samples; ++i) {
     s += smoothRead(pin);
@@ -75,12 +176,26 @@ void setLEDBrightness(int b) {
 void setup() {
   Serial.begin(115200);
   delay(300);
+  
+  // Initialize WiFi and MQTT
+  setupWiFi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
   pinMode(MIC_PIN, INPUT);
   noiseFloor = calibrateNoise(MIC_PIN);
   setupLED();
+
+  Serial.println("Clap detection system started!");
+  Serial.print("Noise floor: ");
+  Serial.println(noiseFloor);
 }
 
 void loop() {
+  // MQTT connection maintenance
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
   unsigned long now = millis();
 
   //mic values 
@@ -100,7 +215,6 @@ void loop() {
   }
 
   if (!inCooldown && isPeak(micVal) && (now - lastPeakTime) > MIN_GAP) {
-
     if (clapCount == 0) {
       seqStart = now;
     }
@@ -112,17 +226,18 @@ void loop() {
 
     Serial.print("Clap detected. Count = ");
     Serial.println(clapCount);
+
+    // Publish clap pattern for visualization
+    publishClapPattern(clapCount);
   }
 
   // If timeout passed → evaluate pattern
   if (clapCount > 0 && (now - lastClapTime) > SEQ_TIMEOUT) {
-
     Serial.print("Final pattern detected: ");
     Serial.println(clapCount);
 
     // LED ACTIONS
 switch (clapCount) {
-
   case 1:  // toggle on/off
     if (ledBrightness > 0) {
       Serial.println("1 Clap = LED OFF");
