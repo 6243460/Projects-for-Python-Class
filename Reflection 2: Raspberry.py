@@ -1,88 +1,70 @@
-import json
 import paho.mqtt.client as mqtt
+import json
+import time
 
-MQTT_SERVER = "192.168.51.183"    # Your Raspberry Pi's IP
-MQTT_PORT   = 1883
-MQTT_SUB    = "thanos/clap_data"   # ESP32 → RPi
-MQTT_PUB    = "thanos/led_cmd"     # RPi → ESP32
+print("=== PROJECT THANOS CONTROLLER ===")
+print("Starting...")
 
+MQTT_BROKER = "localhost"
+CLAP_TOPIC = "thanos/clap"
+LED_CONTROL_TOPIC = "thanos/led/control"
 
-#MAP AVERAGE CLAP PERIOD TO BRIGHTNESS
+def on_connect(client, userdata, flags, rc, properties=None):
+    print(f"Connected with result code {rc}")
+    client.subscribe(CLAP_TOPIC)
+    print("✓ Waiting for claps...")
 
-def map_period_to_brightness(avg_period):
-    # Define expected clap-speed window (seconds)
-    MIN_T = 0.05     # Fastest human clap interval
-    MAX_T = 0.80     # Slowest 3–4 clap pattern
+def on_message(client, userdata, msg, properties=None, reasonCodes=None):
+    if msg.topic == CLAP_TOPIC:
+        try:
+            data = json.loads(msg.payload.decode())
+            pattern = data["pattern"]
+            print(f"🎯 PATTERN {pattern} DETECTED")
+            
+            if pattern == 1:
+                print("   → Sending: LED OFF")
+                client.publish(LED_CONTROL_TOPIC, "OFF")
+            elif pattern == 2:
+                print("   → Sending: LED ON")  
+                client.publish(LED_CONTROL_TOPIC, "ON")
+            elif pattern == 3:
+                print("   → Sending: -50 brightness")
+                client.publish(LED_CONTROL_TOPIC, "BRIGHTNESS:78")
+            elif pattern == 4:
+                print("   → Sending: +50 brightness")
+                client.publish(LED_CONTROL_TOPIC, "BRIGHTNESS:178")
+                
+        except Exception as e:
+            print(f"Error: {e}")
 
-    # Clap value
-    avg_period = max(MIN_T, min(avg_period, MAX_T))
+def on_disconnect(client, userdata, rc, properties=None):
+    print("Disconnected from broker")
 
-    # Map inverse: fast claps → brighter LED
-    brightness = int(255 * (1 - ((avg_period - MIN_T) / (MAX_T - MIN_T))))
-    return max(0, min(brightness, 255))
+def on_subscribe(client, userdata, mid, reason_codes, properties=None):
+    print(f"Subscribed to topic")
 
-# MQTT HANDLERS
-def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT with code", rc)
-    client.subscribe(MQTT_SUB)
-    print(f"Subscribed to: {MQTT_SUB}")
+def on_publish(client, userdata, mid, reason_code, properties=None):
+    print(f"Message published")
 
-
-def on_message(client, userdata, msg):
-    print(f"\nReceived from ESP32: {msg.payload.decode()}")
-
-    try:
-        data = json.loads(msg.payload.decode())
-        pattern = data.get("pattern")
-        avg_period = data.get("average_period", 0)
-
-    except Exception as e:
-        print("❌ ERROR decoding JSON:", e)
-        return
-
-
-    # LED CONTROL LOGIC
-
-    command = {}
-
-    if pattern == 1:
-        print("→ 1 clap → LED OFF")
-        command = {"action": "OFF"}
-
-    elif pattern == 2:
-        print("→ 2 claps → LED ON")
-        command = {"action": "ON"}
-
-    elif pattern == 3:
-        brightness = map_period_to_brightness(avg_period)
-        print(f"→ 3 claps → Set brightness = {brightness}")
-        command = {"action": "BRIGHTNESS", "value": brightness}
-
-    elif pattern == 4:
-        brightness = map_period_to_brightness(avg_period)
-        print(f"→ 4 claps → Alternate brightness = {brightness}")
-        command = {"action": "BRIGHTNESS", "value": brightness}
-
-    else:
-        print("Unknown pattern — ignoring")
-        return
-
-
-    # Publish LED command to ESP32
-
-    client.publish(MQTT_PUB, json.dumps(command))
-    print(f"Sent → {command}")
-
-
-
-# MAIN PROGRAM
-
-client = mqtt.Client()
+# Using VERSION2 with proper callback signatures
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Windows_Controller")
 client.on_connect = on_connect
 client.on_message = on_message
+client.on_disconnect = on_disconnect
+client.on_subscribe = on_subscribe
+client.on_publish = on_publish
 
-print("Connecting to MQTT…")
-client.connect(MQTT_SERVER, MQTT_PORT, 60)
-
-print("Running Raspberry Pi controller...")
-client.loop_forever()
+try:
+    client.connect(MQTT_BROKER, 1883, 60)
+    client.loop_start()
+    
+    print("Controller RUNNING - Press Ctrl+C to stop")
+    
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    print("Stopping...")
+    client.loop_stop()
+    client.disconnect()
+except Exception as e:
+    print(f"Connection error: {e}")
