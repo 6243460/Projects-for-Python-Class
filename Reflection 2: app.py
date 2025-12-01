@@ -5,13 +5,13 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-app = Flask(__name__)
+app = Flask(__name__) #Creates the Flask website
 
 # MQTT Configuration
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 
-# System state
+# System state, stores info abt ESP32 + LED + SENSOR FOR THE WEBSITE (GLOBAL MEMORY)
 system_state = {
     "led_status": "OFF",
     "brightness": 0,
@@ -26,6 +26,7 @@ system_state = {
 # MQTT Client Setup
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "Web_Interface")
 
+#Called when MQTT client connct to broker, subscribe to 4 topic from ESP32
 def on_connect(client, userdata, flags, rc, properties=None):
     print(f"Web Interface connected to MQTT with code {rc}")
     client.subscribe("thanos/clap")
@@ -33,11 +34,13 @@ def on_connect(client, userdata, flags, rc, properties=None):
     client.subscribe("thanos/system/esp32")
     client.subscribe("thanos/heartbeat")  # Add heartbeat topic
 
+#Called when any subscribed MQTT messages arrive, Decodes the message byte to string
 def on_message(client, userdata, msg, properties=None):
     topic = msg.topic
     payload = msg.payload.decode()
     
     try:
+        #Analyze JSON clap data, updates clap pattern and timestamp.
         if topic == "thanos/clap":
             data = json.loads(payload)
             pattern = data.get("pattern", 0)
@@ -53,7 +56,8 @@ def on_message(client, userdata, msg, properties=None):
             system_state["clap_history"] = system_state["clap_history"][:10]
             
             print(f"🎯 Clap pattern {pattern} detected at {system_state['last_clap_time']}")
-            
+
+        #Updates LED state from ESP32, Converts 0-255 PWM values to percentage brightness
         elif topic == "thanos/led/status":
             if payload == "ON":
                 system_state["led_status"] = "ON"
@@ -65,7 +69,8 @@ def on_message(client, userdata, msg, properties=None):
                 brightness = int(payload.split(":")[1])
                 system_state["brightness"] = int((brightness / 255) * 100)
                 system_state["led_status"] = "ON" if brightness > 0 else "OFF"
-                
+
+        #Updates connection status when ESP32 connects/disconnects
         elif topic == "thanos/system/esp32":
             if payload == "online":
                 system_state["esp32_connected"] = True
@@ -74,14 +79,15 @@ def on_message(client, userdata, msg, properties=None):
                 system_state["esp32_connected"] = False
                 
         elif topic == "thanos/heartbeat":
-            # ESP32 sends regular heartbeat to show it's alive
+            # ESP32 sends regular ping to show it's alive
             system_state["esp32_connected"] = True
             system_state["last_esp32_heartbeat"] = datetime.now()
            print(f"💓 ESP32 heartbeat received")
                 
     except Exception as e:
         print(f"Error processing MQTT message: {e}")
-
+        
+#Check if last ping within 10 secs
 def check_esp32_connection():
     """Check if ESP32 is still connected based on last heartbeat"""
     if system_state["last_esp32_heartbeat"] is None:
@@ -94,30 +100,34 @@ def check_esp32_connection():
         return False
     
     return True
-
+    
+#Checks connection every 5secs
 def connection_monitor():
     """Background thread to monitor ESP32 connection"""
     while True:
         check_esp32_connection()
         time.sleep(5)  # Check every 5 seconds
 
+#Start MQTT client and loop in the background
 def start_mqtt_client():
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_start()
 
-# Flask Routes
+#Loads HMTL page
 @app.route('/')
 def index():
     return render_template('index.html')
 
+#Updates ESP32 Status
 @app.route('/api/status')
 def get_status():
     # Update connection status before sending response
     system_state["esp32_connected"] = check_esp32_connection()
     return jsonify(system_state)
 
+#Website sends on/off commands, publlish  MQTT messages to control ESP32
 @app.route('/api/control', methods=['POST'])
 def control_led():
     data = request.json
@@ -137,6 +147,7 @@ def control_led():
     
     return jsonify({"status": "success"})
 
+#web clap patterns, forward to ESP32 by NQTT
 @app.route('/api/clap_test', methods=['POST'])
 def simulate_clap():
     data = request.json
@@ -196,6 +207,7 @@ def simulate_clap():
     
     return jsonify({"status": f"Simulated clap pattern {pattern}"})
 
+#Starts MQTT, ESP32 and web server
 if __name__ == '__main__':
     # Start MQTT client in background thread
     mqtt_thread = threading.Thread(target=start_mqtt_client)
