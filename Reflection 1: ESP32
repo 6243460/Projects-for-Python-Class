@@ -124,6 +124,10 @@ void reconnect() {
       Serial.println("CONNECTED to MQTT!");
       client.subscribe(led_control_topic);
       Serial.println("Subscribed to LED control");
+
+      // Publish online status
+      client.publish("thanos/system/esp32", "online");
+
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -184,6 +188,9 @@ void setup() {
   pinMode(MIC_PIN, INPUT);
   noiseFloor = calibrateNoise(MIC_PIN);
   setupLED();
+
+  // Publish online status
+  client.publish("thanos/system/esp32", "online");
 
   Serial.println("Clap detection system started!");
   Serial.print("Noise floor: ");
