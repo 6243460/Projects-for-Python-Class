@@ -22,6 +22,7 @@ const char* clap_topic = "clap/pattern";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+unsigned long lastHeartbeat = 0; 
 
 const int MIC_PIN = 34;
 const int LED_PIN = 33;     
@@ -112,6 +113,57 @@ void callback(char* topic, byte* payload, unsigned int length) {
       Serial.println(brightness);
     }
   }
+  else if (String(topic) == clap_topic) {
+    Serial.println("📨 Received clap pattern from web");
+
+    // Parse the JSON message
+    int pattern = 0;
+    int startPos = message.indexOf("\"pattern\":");
+    if (startPos != -1) {
+      startPos += 10; // Move past "\"pattern\":"
+      int endPos = message.indexOf(",", startPos);
+      if (endPos == -1) endPos = message.indexOf("}", startPos);
+      if (endPos != -1) {
+        String patternStr = message.substring(startPos, endPos);
+        pattern = patternStr.toInt();
+      }
+    }
+
+    Serial.print("🎯 Web clap pattern: ");
+    Serial.println(pattern);
+
+    // Execute the LED action based on pattern
+    switch (pattern) {
+      case 1:
+        // Toggle LED
+        if (ledBrightness > 0) {
+          Serial.println("Web 1 Clap = LED OFF");
+          setLEDBrightness(0);
+        } else {
+          Serial.println("Web 1 Clap = LED ON");
+          setLEDBrightness(128);
+        }
+        break;
+
+      case 2:
+        // Decrease brightness
+        Serial.println("Web 2 Claps = -50 brightness");
+        setLEDBrightness(ledBrightness - step);
+        break;
+
+      case 3:
+        // Increase brightness
+        Serial.println("Web 3 Claps = +50 brightness");
+        setLEDBrightness(ledBrightness + step);
+        break;
+
+      case 4:
+        // Max brightness
+        Serial.println("Web 4 Claps = MAX brightness");
+        setLEDBrightness(255);
+        break;
+    }
+  }
 }
 
 void reconnect() {
@@ -175,6 +227,16 @@ void setLEDBrightness(int b) {
   b = constrain(b, 0, 255);
   ledBrightness = b; 
   ledcWrite(PWM_CH, ledBrightness);
+
+  // PUBLISH LED STATUS TO MQTT
+  if (b == 0) {
+    client.publish("thanos/led/status", "OFF");
+    Serial.println("Published: LED OFF");
+  } else {
+    String message = "BRIGHTNESS:" + String(b);
+    client.publish("thanos/led/status", message.c_str());
+    Serial.println("Published: Brightness " + String(b));
+  }
 }
 
 void setup() {
@@ -212,6 +274,11 @@ void loop() {
     Serial.println(val);
     lastPrint = now;
   }
+
+  if (millis() - lastHeartbeat > 5000) {
+      client.publish("thanos/heartbeat", "alive");
+      lastHeartbeat = millis();
+    }
 
   int micVal = smoothRead(MIC_PIN);
 
