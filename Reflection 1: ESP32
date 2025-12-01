@@ -1,62 +1,55 @@
-/*I started coding the ESP32 for our project
-NOTES: There are still some changes to be made.
-1 CLAP FIRST TIME= LED ON at 128
-1 CLAP SECOND TIME = LED OFF
-2 CLAPS = -50 BRIGHTNESS 
-3 CLAPS = +50 BRIGHTNESS
-
-CODE:*/
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-// WiFi settings 
+// WiFi settings
 const char* ssid = "SSID";
 const char* password = "PASSWORD";
 
-// MQTT settings 
-const char* mqtt_server = "IP";  
+// MQTT settings
+const char* mqtt_server = "IP";
 
-// MQTT topics - ADD THESE DEFINITIONS
-const char* led_control_topic = "led/control";
-const char* clap_topic = "clap/pattern";
+// MQTT topics
+const char* led_control_topic = "thanos/led/control";
+const char* clap_topic = "thanos/clap";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
-unsigned long lastHeartbeat = 0; 
+unsigned long lastHeartbeat = 0;
 
+// Hardware pins
 const int MIC_PIN = 34;
-const int LED_PIN = 33;     
+const int LED_PIN = 33;
+
+// Audio processing
 const int SMOOTH_SAMPLES = 15;
 int noiseFloor = 0;
-int CLAP_THRESHOLD = 150;
+int CLAP_THRESHOLD = 600;
 
-//Timing 
-const unsigned long MIN_GAP = 70;   
-const unsigned long COOLDOWN = 100;  
-const unsigned long SEQ_TIMEOUT = 1000; 
+// Timing constants
+const unsigned long MIN_GAP = 70;
+const unsigned long COOLDOWN = 100;
+const unsigned long SEQ_TIMEOUT = 1000;
+const unsigned long PRINT_INTERVAL = 60;
 
-//Clap detection
+// Clap detection state
 unsigned long lastPeakTime = 0;
 bool inCooldown = false;
 
-//sensor values
-unsigned long lastPrint = 0;
-const unsigned long PRINT_INTERVAL = 60;
-
-//PWM
+// PWM configuration
 const int PWM_CH = 0;
 
-//Brightness control
-int ledBrightness = 128;       // default brightness
-const int step = 50;           // increment/decrement per pattern
-bool ledState = false;
+// LED state
+int ledBrightness = 128;
+const int step = 50;
 
-//Clap counting
+// Clap counting
 int clapCount = 0;
-unsigned long seqStart = 0;
 unsigned long lastClapTime = 0;
 
-//Function Declaration
+// Sensor monitoring
+unsigned long lastPrint = 0;
+
+// Function declarations
 void setupWiFi();
 void callback(char* topic, byte* payload, unsigned int length);
 void reconnect();
@@ -66,8 +59,10 @@ int calibrateNoise(int pin, int samples = 200, int delayMs = 3);
 bool isPeak(int value);
 void setupLED();
 void setLEDBrightness(int b);
+void handleWebClapPattern(int pattern);
+void handleLocalClapPattern(int pattern);
+void parseAndHandleWebClap(String message);
 
-//MQTT Functions
 void setupWiFi() {
   delay(10);
   Serial.println();
@@ -98,7 +93,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
   Serial.println(message);
 
-  // Handle LED control from Python
   if (String(topic) == led_control_topic) {
     if (message == "ON") {
       setLEDBrightness(128);
@@ -112,58 +106,86 @@ void callback(char* topic, byte* payload, unsigned int length) {
       Serial.print("COMMAND: Brightness ");
       Serial.println(brightness);
     }
+  } else if (String(topic) == clap_topic) {
+    Serial.println("📨 Received clap pattern from web");
+    parseAndHandleWebClap(message);
   }
-  else if (String(topic) == clap_topic) {
-    Serial.println("📨 Received clap pattern from web");
+}
 
-    // Parse the JSON message
-    int pattern = 0;
-    int startPos = message.indexOf("\"pattern\":");
-    if (startPos != -1) {
-      startPos += 10; // Move past "\"pattern\":"
-      int endPos = message.indexOf(",", startPos);
-      if (endPos == -1) endPos = message.indexOf("}", startPos);
-      if (endPos != -1) {
-        String patternStr = message.substring(startPos, endPos);
-        pattern = patternStr.toInt();
-      }
-    }
+void parseAndHandleWebClap(String message) {
+  int pattern = 0;
+  int startPos = message.indexOf("\"pattern\":");
+  if (startPos != -1) {
+    startPos += 10;
+    int endPos = message.indexOf(",", startPos);
+    if (endPos == -1) endPos = message.indexOf("}", startPos);
+    if (endPos != -1) {
+      String patternStr = message.substring(startPos, endPos);
+      pattern = patternStr.toInt();
+    }
+  }
 
-    Serial.print("🎯 Web clap pattern: ");
-    Serial.println(pattern);
+  Serial.print("🎯 Web clap pattern: ");
+  Serial.println(pattern);
+  handleWebClapPattern(pattern);
+}
 
-    // Execute the LED action based on pattern
-    switch (pattern) {
-      case 1:
-        // Toggle LED
-        if (ledBrightness > 0) {
-          Serial.println("Web 1 Clap = LED OFF");
-          setLEDBrightness(0);
-        } else {
-          Serial.println("Web 1 Clap = LED ON");
-          setLEDBrightness(128);
-        }
-        break;
+void handleWebClapPattern(int pattern) {
+  switch (pattern) {
+    case 1:
+      if (ledBrightness > 0) {
+        Serial.println("Web 1 Clap = LED OFF");
+        setLEDBrightness(0);
+      } else {
+        Serial.println("Web 1 Clap = LED ON");
+        setLEDBrightness(128);
+      }
+      break;
+      
+    case 2:
+      Serial.println("Web 2 Claps = -50 brightness");
+      setLEDBrightness(ledBrightness - step);
+      break;
 
-      case 2:
-        // Decrease brightness
-        Serial.println("Web 2 Claps = -50 brightness");
-        setLEDBrightness(ledBrightness - step);
-        break;
+    case 3:
+      Serial.println("Web 3 Claps = +50 brightness");
+      setLEDBrightness(ledBrightness + step);
+      break;
 
-      case 3:
-        // Increase brightness
-        Serial.println("Web 3 Claps = +50 brightness");
-        setLEDBrightness(ledBrightness + step);
-        break;
+    case 4:
+      Serial.println("Web 4 Claps = MAX brightness");
+      setLEDBrightness(255);
+      break;
+  }
+}
 
-      case 4:
-        // Max brightness
-        Serial.println("Web 4 Claps = MAX brightness");
-        setLEDBrightness(255);
-        break;
-    }
-  }
+void handleLocalClapPattern(int pattern) {
+  switch (pattern) {
+    case 1:
+      if (ledBrightness > 0) {
+        Serial.println("1 Clap = LED OFF");
+        setLEDBrightness(0);
+      } else { 
+        Serial.println("1 Clap = LED ON");
+        setLEDBrightness(128);
+      }
+      break;
+
+    case 2:
+      Serial.println("2 Claps = -50 brightness");
+      setLEDBrightness(ledBrightness - step);
+      break;
+
+    case 3:
+      Serial.println("3 Claps = +50 brightness");
+      setLEDBrightness(ledBrightness + step);
+      break;
+
+    case 4:
+      Serial.println("4 Claps = MAX brightness");
+      setLEDBrightness(255);
+      break;
+  }
 }
 
 void reconnect() {
@@ -175,11 +197,9 @@ void reconnect() {
     if (client.connect(clientId.c_str())) {
       Serial.println("CONNECTED to MQTT!");
       client.subscribe(led_control_topic);
-      Serial.println("Subscribed to LED control");
-
-      // Publish online status
+      client.subscribe(clap_topic);  // FIX: Subscribe to clap topic
+      Serial.println("Subscribed to LED control and clap topics");
       client.publish("thanos/system/esp32", "online");
-
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -227,8 +247,7 @@ void setLEDBrightness(int b) {
   b = constrain(b, 0, 255);
   ledBrightness = b; 
   ledcWrite(PWM_CH, ledBrightness);
-
-  // PUBLISH LED STATUS TO MQTT
+  
   if (b == 0) {
     client.publish("thanos/led/status", "OFF");
     Serial.println("Published: LED OFF");
@@ -243,7 +262,6 @@ void setup() {
   Serial.begin(115200);
   delay(300);
   
-  // Initialize WiFi and MQTT
   setupWiFi();
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
@@ -251,7 +269,6 @@ void setup() {
   noiseFloor = calibrateNoise(MIC_PIN);
   setupLED();
 
-  // Publish online status
   client.publish("thanos/system/esp32", "online");
 
   Serial.println("Clap detection system started!");
@@ -260,14 +277,13 @@ void setup() {
 }
 
 void loop() {
-  // MQTT connection maintenance
   if (!client.connected()) {
     reconnect();
   }
   client.loop();
+  
   unsigned long now = millis();
 
-  //mic values 
   if (now - lastPrint >= PRINT_INTERVAL) {
     int val = smoothRead(MIC_PIN);
     Serial.print("Mic: "); 
@@ -275,10 +291,10 @@ void loop() {
     lastPrint = now;
   }
 
-  if (millis() - lastHeartbeat > 5000) {
-      client.publish("thanos/heartbeat", "alive");
-      lastHeartbeat = millis();
-    }
+  if (millis() - lastHeartbeat > 5000) {
+    client.publish("thanos/heartbeat", "alive");
+    lastHeartbeat = millis();
+  }
 
   int micVal = smoothRead(MIC_PIN);
 
@@ -289,10 +305,6 @@ void loop() {
   }
 
   if (!inCooldown && isPeak(micVal) && (now - lastPeakTime) > MIN_GAP) {
-    if (clapCount == 0) {
-      seqStart = now;
-    }
-
     clapCount++;
     lastClapTime = now;
     lastPeakTime = now;
@@ -300,46 +312,13 @@ void loop() {
 
     Serial.print("Clap detected. Count = ");
     Serial.println(clapCount);
-
-    // Publish clap pattern for visualization
     publishClapPattern(clapCount);
   }
 
-  // If timeout passed → evaluate pattern
   if (clapCount > 0 && (now - lastClapTime) > SEQ_TIMEOUT) {
     Serial.print("Final pattern detected: ");
     Serial.println(clapCount);
-
-    // LED ACTIONS
-switch (clapCount) {
-  case 1:  // toggle on/off
-    if (ledBrightness > 0) {
-      Serial.println("1 Clap = LED OFF");
-      setLEDBrightness(0);
-      ledState = false;
-    } else { 
-      Serial.println("1 Clap = LED ON");
-      setLEDBrightness(128);
-    }
-    break;
-
-  case 2: // brightness -50
-    Serial.println("2 Claps = - brightness");
-    setLEDBrightness(ledBrightness - step);
-    break;
-
-  case 3:  // brightness +50
-    Serial.println("3 Claps = + brightness");
-    setLEDBrightness(ledBrightness + step);
-    break;
-
-  case 4:  // max brightness
-    Serial.println("4 Claps = MAX brightness");
-    setLEDBrightness(255);
-    break;
-}
-
-    // RESET 
+    handleLocalClapPattern(clapCount);
     clapCount = 0;
   }
   
