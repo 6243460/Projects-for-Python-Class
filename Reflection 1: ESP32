@@ -23,7 +23,7 @@ const int LED_PIN = 33;
 // Audio processing
 const int SMOOTH_SAMPLES = 15;
 int noiseFloor = 0;
-int CLAP_THRESHOLD = 400;
+int CLAP_THRESHOLD = 500;
 
 // Timing constants
 const unsigned long MIN_GAP = 70;
