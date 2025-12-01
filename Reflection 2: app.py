@@ -52,7 +52,7 @@ def on_message(client, userdata, msg, properties=None):
             # Keep only last 10 events
             system_state["clap_history"] = system_state["clap_history"][:10]
             
-            print(f"🎯 Clap pattern {pattern} detected at {system_state['last_clap_time']}")
+            print(f" Clap pattern {pattern} detected at {system_state['last_clap_time']}")
             
         elif topic == "thanos/led/status":
             if payload == "ON":
@@ -77,7 +77,7 @@ def on_message(client, userdata, msg, properties=None):
             # ESP32 sends regular heartbeat to show it's alive
             system_state["esp32_connected"] = True
             system_state["last_esp32_heartbeat"] = datetime.now()
-            print(f"💓 ESP32 heartbeat received")
+            print(f" ESP32 heartbeat received")
                 
     except Exception as e:
         print(f"Error processing MQTT message: {e}")
@@ -142,7 +142,7 @@ def simulate_clap():
     data = request.json
     pattern = data.get('pattern', 1)
     
-    print(f"🎯 Web: Simulating clap pattern {pattern}")
+    print(f" Web: Simulating clap pattern {pattern}")
     
     # Forward the clap pattern to ESP32 via MQTT
     clap_message = json.dumps({"pattern": pattern, "source": "web"})
