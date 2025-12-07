@@ -2,11 +2,11 @@
 #include <PubSubClient.h>
 
 // WiFi settings
-const char* ssid = "Distributel04860";
-const char* password = "6rm92ltml5hz";
+const char* ssid = "SSID";
+const char* password = "PASS";
 
 // MQTT settings
-const char* mqtt_server = "192.168.68.78";
+const char* mqtt_server = "IP";
 
 // MQTT topics
 const char* led_control_topic = "thanos/led/control";
