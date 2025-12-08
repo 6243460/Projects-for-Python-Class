@@ -25,11 +25,11 @@ const int LED_PIN = 33;
 
 // Audio processing
 const int SMOOTH_SAMPLES = 15;
-int noiseFloor = 0;
-int CLAP_THRESHOLD = 400;
+int noiseFloor = 0;  //background noise
+int CLAP_THRESHOLD = 400;  //value needed on serial monitor to detect a calp
 
 // Timing constants
-const unsigned long MIN_GAP = 70;
+const unsigned long MIN_GAP = 70; //ms, gap between claps
 const unsigned long COOLDOWN = 100;
 const unsigned long SEQ_TIMEOUT = 1000;
 const unsigned long PRINT_INTERVAL = 1000;  // Print every 1 second
