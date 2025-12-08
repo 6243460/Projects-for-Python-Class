@@ -2,8 +2,8 @@
 #include <PubSubClient.h>
 
 // WiFi settings
-const char* ssid = "Distributel04860";
-const char* password = "6rm92ltml5hz";
+const char* ssid = "iot_wireless";
+const char* password = "passphrase";
 
 // MQTT settings (Raspberry Pi IP)
 const char* mqtt_server = "192.168.68.78";
