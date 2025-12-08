@@ -1,5 +1,6 @@
 Problems we faced:
-During this project we faced many problems. One of the main things was getting our microphone to detect our claps properly. It would often detect the background noise which was inconvenient since it would make the microphone not detect any of our clapss. What we did as a solution was first add threshold.
+During this project we faced many problems. One of the main things was getting our microphone to detect our claps properly. It would often detect the background noise which was inconvenient since 
+it would make the microphone not detect any of our clapss. What we did as a solution was first add threshold.
 
 
 
