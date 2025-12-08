@@ -3,14 +3,10 @@ During this project we faced many problems. One of the main things was getting o
 it would make the microphone not detect any of our clapss. What we did as a solution was first add threshold. Later on we added commands called Smooth sample and Floor noise which sets sets how many analog samples
 to average for a smoother mic value reading and the noise floor was set as an integer that helps calibrating the microphone. Lastly, in order to ensure everything works correctly we even added timing gaps between
 claps, a cooldown anda  timeout. 
-
 Another issue we faced was with the microphone itself, the microphone would detach from the board its from and we had to solder it back together. There was a also a sensitivity potentiometer that we had to play
 around with to set the sensitivity accordingly to our project.
 
-
-
 What we learned:
-
 Overall we enjoyed working on this project, it was fun to see how we were able to take our past knowledge (arduino + esp32) and implement it into something new such as the raspberry pi. We also learned how to make
 an html file which was something we had no idea on how to do so it was fun learning that too. 
 
