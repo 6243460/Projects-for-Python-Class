@@ -12,7 +12,7 @@ const char* mqtt_server = "192.168.68.78";
 const char* clap_detect_topic = "thanos/clap/detected";
 const char* led_command_topic = "thanos/led/command";
 const char* heartbeat_topic = "thanos/esp32/heartbeat";
-const char* led_feedback_topic = "thanos/led/feedback";
+const char* led_feedback_topic = "thanos/led/status";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
